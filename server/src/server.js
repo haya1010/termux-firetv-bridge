@@ -156,6 +156,11 @@ wss.on("connection", ws => {
   });
   ws.on("close", () => {
     if (peers[ws.role] === ws) peers[ws.role] = null;
+    if (ws.role === "voice" && openai) {
+      openai.close(1000, "phone voice session ended");
+      openai = null;
+      gatePhoneMic(false);
+    }
     const other = ws.role === "sender" ? peers.receiver : peers.sender;
     send(other, { type: "peer", value: `${ws.role}-closed` });
   });

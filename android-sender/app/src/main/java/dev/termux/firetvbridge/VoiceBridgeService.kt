@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import okhttp3.*
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+import kotlin.math.sqrt
 
 class VoiceBridgeService : Service() {
   companion object { const val START="voice.start"; const val STOP="voice.stop"; private const val CHANNEL="voice_bridge" }
@@ -27,6 +28,8 @@ class VoiceBridgeService : Service() {
   private var echoCanceler:AcousticEchoCanceler?=null
   private var noiseSuppressor:NoiseSuppressor?=null
   private var echoReference:AudioTrack?=null
+  private val handler=android.os.Handler(android.os.Looper.getMainLooper())
+  private val autoStop=Runnable { stopSelf() }
 
   override fun onBind(intent:Intent?):IBinder?=null
   override fun onStartCommand(intent:Intent?,flags:Int,startId:Int):Int {
@@ -35,7 +38,8 @@ class VoiceBridgeService : Service() {
     getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL,"ちひろ音声会話",NotificationManager.IMPORTANCE_LOW))
     startForeground(103,NotificationCompat.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_btn_speak_now)
       .setContentTitle("ちひろと会話中").setContentText("スマホのマイク → Fire TV").setOngoing(true).build())
-    connect(); return START_STICKY
+    handler.postDelayed(autoStop,120_000)
+    connect(); return START_NOT_STICKY
   }
 
   private fun connect(){
@@ -69,9 +73,16 @@ class VoiceBridgeService : Service() {
     running=true; record!!.startRecording()
     Thread({
       val pcm=ByteArray(960)
+      var hangover=0
       while(running){
         val n=record?.read(pcm,0,pcm.size)?:-1
-        if(n>0 && !micMuted) socket?.send(JSONObject().put("type","voice-audio").put("value",Base64.encodeToString(pcm.copyOf(n),Base64.NO_WRAP)).toString())
+        if(n>0 && !micMuted) {
+          var sum=0.0; var i=0
+          while(i+1<n){ val s=((pcm[i+1].toInt() shl 8) or (pcm[i].toInt() and 0xff)).toShort().toInt(); sum+=s.toDouble()*s; i+=2 }
+          val rms=sqrt(sum/maxOf(1,n/2))
+          if(rms>280) hangover=30 else if(hangover>0) hangover--
+          if(hangover>0) socket?.send(JSONObject().put("type","voice-audio").put("value",Base64.encodeToString(pcm.copyOf(n),Base64.NO_WRAP)).toString())
+        }
       }
     },"VoiceMic").start()
   }
@@ -82,5 +93,5 @@ class VoiceBridgeService : Service() {
     getSystemService(AudioManager::class.java).mode=AudioManager.MODE_NORMAL
     try{record?.stop()}catch(_:Throwable){}; record?.release(); record=null
   }
-  override fun onDestroy(){ stopMic(); socket?.close(1000,"stopped"); client.dispatcher.executorService.shutdown(); stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy() }
+  override fun onDestroy(){ handler.removeCallbacks(autoStop); stopMic(); socket?.close(1000,"stopped"); client.dispatcher.executorService.shutdown(); stopForeground(STOP_FOREGROUND_REMOVE); super.onDestroy() }
 }
