@@ -1,0 +1,9 @@
+server/node_modules/
+server/.env
+android-sender/.gradle/
+android-sender/local.properties
+android-sender/**/build/
+firetv-receiver/.gradle/
+firetv-receiver/local.properties
+firetv-receiver/**/build/
+*.apk

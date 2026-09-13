@@ -1,0 +1,9 @@
+#!/data/data/com.termux/files/usr/bin/sh
+set -eu
+
+serial="${FIRETV_SERIAL:-192.168.0.42:5555}"
+adb connect "$serial" >/dev/null
+adb -s "$serial" shell input keyevent 224
+sleep 1
+adb -s "$serial" shell am start -n dev.termux.firetvreceiver/.MainActivity \
+  --es server_url ws://192.168.0.10:8080/ws

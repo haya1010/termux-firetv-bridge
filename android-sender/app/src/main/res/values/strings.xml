@@ -1,0 +1,4 @@
+<resources>
+  <string name="app_name">Termux Fire TV Bridge</string>
+  <string name="accessibility_description">Fire TV リモコン操作を画面のスワイプ、タップ、戻る操作へ変換します。</string>
+</resources>
