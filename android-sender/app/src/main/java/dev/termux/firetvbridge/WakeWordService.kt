@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.os.Handler
 import android.os.PowerManager
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -21,15 +22,19 @@ class WakeWordService : Service(), RecognitionListener {
     const val STOP = "wake.stop"
     private const val CHANNEL = "wake_word"
     private const val NOTIFICATION = 102
+    private const val REARM_DELAY_MS = 5_000L
   }
 
   private var recognizer: SpeechRecognizer? = null
   private var cpuLock: PowerManager.WakeLock? = null
   private val client = OkHttpClient()
+  private val handler = Handler()
   private var triggered = false
+  private var running = false
 
   override fun onCreate() {
     super.onCreate()
+    running = true
     createChannel()
     startForeground(NOTIFICATION, notification("「ちひろ」を待っています"))
     cpuLock = getSystemService(PowerManager::class.java)
@@ -43,7 +48,7 @@ class WakeWordService : Service(), RecognitionListener {
   }
 
   private fun startListening() {
-    if (triggered || !SpeechRecognizer.isRecognitionAvailable(this)) return
+    if (!running || triggered || !SpeechRecognizer.isRecognitionAvailable(this)) return
     recognizer?.destroy()
     recognizer = SpeechRecognizer.createSpeechRecognizer(this).also {
       it.setRecognitionListener(this)
@@ -66,11 +71,23 @@ class WakeWordService : Service(), RecognitionListener {
       val request = Request.Builder().url("http://127.0.0.1:8080/wake")
         .post(ByteArray(0).toRequestBody(null)).build()
       client.newCall(request).enqueue(object : Callback {
-        override fun onFailure(call: Call, e: IOException) { stopSelf() }
-        override fun onResponse(call: Call, response: Response) { response.close(); stopSelf() }
+        override fun onFailure(call: Call, e: IOException) { rearm() }
+        override fun onResponse(call: Call, response: Response) {
+          response.close()
+          rearm()
+        }
       })
     }
   }
+
+  private fun rearm() = handler.postDelayed({
+    if (!running) return@postDelayed
+    recognizer?.destroy()
+    recognizer = null
+    triggered = false
+    notifyText("「ちひろ」を待っています")
+    startListening()
+  }, REARM_DELAY_MS)
 
   override fun onPartialResults(partialResults: Bundle?) = inspect(partialResults)
   override fun onResults(results: Bundle?) { inspect(results); if (!triggered) startListening() }
@@ -83,6 +100,8 @@ class WakeWordService : Service(), RecognitionListener {
   override fun onEvent(eventType: Int, params: Bundle?) = Unit
 
   override fun onDestroy() {
+    running = false
+    handler.removeCallbacksAndMessages(null)
     recognizer?.destroy(); recognizer = null
     cpuLock?.takeIf { it.isHeld }?.release(); cpuLock = null
     super.onDestroy()

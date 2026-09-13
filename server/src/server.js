@@ -39,8 +39,11 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function wakeFireTv() {
   // `connect` is harmless when already connected and recovers after Wi-Fi sleep.
   await run(adb, ["connect", fireTvSerial], { timeout: 10_000 });
-  await run(adb, ["-s", fireTvSerial, "shell", "input", "keyevent", "224"], { timeout: 10_000 });
-  await delay(1_200);
+  // HOME makes an already-powered Hitachi TV switch from terrestrial TV to
+  // the Fire TV HDMI input via CEC. ADB cannot reproduce the physical remote's
+  // hardware wake path, so this flow intentionally does not power on the TV.
+  await run(adb, ["-s", fireTvSerial, "shell", "input", "keyevent", "3"], { timeout: 10_000 });
+  await delay(4_000);
   await run(adb, [
     "-s", fireTvSerial, "shell", "am", "start", "-n",
     fireTvComponent, "--es", "server_url",
