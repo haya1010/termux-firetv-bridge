@@ -13,7 +13,9 @@ const publicDir = path.resolve(here, "../public");
 const port = Number(process.env.PORT || 8080);
 const token = process.env.BRIDGE_TOKEN || "";
 const fireTvSerial = process.env.FIRETV_SERIAL || "192.168.0.42:5555";
-const fireTvComponent = process.env.FIRETV_COMPONENT || "jp.kusakabesatsu.chihiro/.MainActivity";
+// This receiver contains the Chihiro rig and is the app that accepts the
+// WebSocket audio/transcript stream from Termux.
+const fireTvComponent = process.env.FIRETV_COMPONENT || "dev.termux.firetvreceiver/.MainActivity";
 const termuxAdb = "/data/data/com.termux/files/usr/bin/adb";
 const adb = process.env.ADB_PATH || (fs.existsSync(termuxAdb) ? termuxAdb : "adb");
 const run = promisify(execFile);

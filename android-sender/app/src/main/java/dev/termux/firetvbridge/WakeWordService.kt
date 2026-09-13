@@ -23,6 +23,8 @@ class WakeWordService : Service(), RecognitionListener {
     private const val CHANNEL = "wake_word"
     private const val NOTIFICATION = 102
     private const val REARM_DELAY_MS = 5_000L
+    // VoiceBridgeService ends its bounded session after two minutes.
+    private const val VOICE_SESSION_REARM_DELAY_MS = 125_000L
   }
 
   private var recognizer: SpeechRecognizer? = null
@@ -74,20 +76,24 @@ class WakeWordService : Service(), RecognitionListener {
         override fun onFailure(call: Call, e: IOException) { rearm() }
         override fun onResponse(call: Call, response: Response) {
           response.close()
-          rearm()
+          // Fire TV is now foreground; hand the microphone to the bounded
+          // Realtime session. Do not run SpeechRecognizer concurrently.
+          startForegroundService(Intent(this@WakeWordService, VoiceBridgeService::class.java)
+            .setAction(VoiceBridgeService.START))
+          rearm(VOICE_SESSION_REARM_DELAY_MS)
         }
       })
     }
   }
 
-  private fun rearm() = handler.postDelayed({
+  private fun rearm(delayMs: Long = REARM_DELAY_MS) = handler.postDelayed({
     if (!running) return@postDelayed
     recognizer?.destroy()
     recognizer = null
     triggered = false
     notifyText("「ちひろ」を待っています")
     startListening()
-  }, REARM_DELAY_MS)
+  }, delayMs)
 
   override fun onPartialResults(partialResults: Bundle?) = inspect(partialResults)
   override fun onResults(results: Bundle?) { inspect(results); if (!triggered) startListening() }

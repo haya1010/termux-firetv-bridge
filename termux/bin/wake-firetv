@@ -2,7 +2,7 @@
 set -eu
 
 serial="${FIRETV_SERIAL:-192.168.0.42:5555}"
-component="${FIRETV_COMPONENT:-jp.kusakabesatsu.chihiro/.MainActivity}"
+component="${FIRETV_COMPONENT:-dev.termux.firetvreceiver/.MainActivity}"
 adb connect "$serial" >/dev/null
 adb -s "$serial" shell input keyevent 3
 sleep 4
