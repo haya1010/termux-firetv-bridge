@@ -39,10 +39,18 @@ class MainActivity : AppCompatActivity() {
       text = "ウェイク待受を停止"
       setOnClickListener { startService(Intent(this@MainActivity, WakeWordService::class.java).setAction(WakeWordService.STOP)) }
     }
+    val voiceStart = Button(this).apply {
+      text = "音声会話を開始"
+      setOnClickListener { ContextCompat.startForegroundService(this@MainActivity, Intent(this@MainActivity, VoiceBridgeService::class.java).setAction(VoiceBridgeService.START)) }
+    }
+    val voiceStop = Button(this).apply {
+      text = "音声会話を停止"
+      setOnClickListener { startService(Intent(this@MainActivity, VoiceBridgeService::class.java).setAction(VoiceBridgeService.STOP)) }
+    }
     val note = TextView(this).apply { text = "1) アクセシビリティを有効化\n2) START（初回だけ画面共有を許可）\n3) ウェイク待受を開始\n4) ChatGPTへ戻る"; textSize = 18f }
     setContentView(LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL; setPadding(32,32,32,32)
-      addView(note); addView(server); addView(accessibility); addView(start); addView(stop); addView(wakeStart); addView(wakeStop)
+      addView(note); addView(server); addView(accessibility); addView(start); addView(stop); addView(wakeStart); addView(wakeStop); addView(voiceStart); addView(voiceStop)
     })
     if (android.os.Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.RECORD_AUDIO), 10)
     else requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), 10)

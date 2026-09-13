@@ -2,6 +2,8 @@ import express from "express";
 import http from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer, WebSocket } from "ws";
@@ -13,6 +15,10 @@ const token = process.env.BRIDGE_TOKEN || "";
 const fireTvSerial = process.env.FIRETV_SERIAL || "192.168.0.42:5555";
 const adb = process.env.ADB_PATH || "adb";
 const run = promisify(execFile);
+const apiKey = process.env.OPENAI_API_KEY || (() => {
+  try { return fs.readFileSync(path.join(os.homedir(), ".config/openai/key"), "utf8").trim(); }
+  catch { return ""; }
+})();
 
 const app = express();
 app.use(express.json());
@@ -20,7 +26,9 @@ app.use(express.static(publicDir, { extensions: ["html"] }));
 app.get("/health", (_req, res) => res.type("text").send("ok"));
 app.get("/status", (_req, res) => res.json({
   sender: peers.sender?.readyState === WebSocket.OPEN,
-  receiver: peers.receiver?.readyState === WebSocket.OPEN
+  receiver: peers.receiver?.readyState === WebSocket.OPEN,
+  voice: peers.voice?.readyState === WebSocket.OPEN,
+  realtime: openai?.readyState === WebSocket.OPEN
 }));
 
 let waking = null;
@@ -54,10 +62,39 @@ app.post("/wake", async (req, res) => {
 
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
-const peers = { sender: null, receiver: null };
+const peers = { sender: null, receiver: null, voice: null };
+let openai = null;
 
 function send(ws, data) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
+
+function connectOpenAI() {
+  if (!apiKey || openai?.readyState === WebSocket.OPEN || openai?.readyState === WebSocket.CONNECTING) return;
+  openai = new WebSocket("wss://api.openai.com/v1/realtime?model=gpt-realtime", {
+    headers: { Authorization: `Bearer ${apiKey}` }
+  });
+  openai.on("open", () => openai.send(JSON.stringify({
+    type: "session.update",
+    session: {
+      type: "realtime", model: "gpt-realtime", output_modalities: ["audio"],
+      instructions: "あなたはちひろ。日本語で親しみやすく簡潔に会話してください。",
+      audio: {
+        input: { format: { type: "audio/pcm", rate: 24000 }, turn_detection: { type: "server_vad" } },
+        output: { format: { type: "audio/pcm", rate: 24000 }, voice: "marin" }
+      }
+    }
+  })));
+  openai.on("message", raw => {
+    const event = JSON.parse(raw.toString());
+    if (["response.output_audio.delta", "response.audio.delta"].includes(event.type))
+      send(peers.receiver, { type: "realtime-audio", sampleRate: 24000, value: event.delta });
+    else if (["response.output_audio_transcript.delta", "response.audio_transcript.delta"].includes(event.type))
+      send(peers.receiver, { type: "realtime-transcript", value: event.delta });
+    else if (event.type === "error") send(peers.receiver, { type: "realtime-error", value: event.error?.message || "Realtime error" });
+  });
+  openai.on("close", () => { openai = null; send(peers.receiver, { type: "realtime-status", value: "切断" }); });
+  openai.on("error", error => send(peers.receiver, { type: "realtime-error", value: error.message }));
 }
 
 server.on("upgrade", (req, socket, head) => {
@@ -79,6 +116,7 @@ wss.on("connection", ws => {
   const old = peers[ws.role];
   if (old && old !== ws) old.close(4000, "replaced");
   peers[ws.role] = ws;
+  if (ws.role === "voice") connectOpenAI();
   send(ws, { type: "status", value: "connected", role: ws.role });
   if (ws.role === "receiver") send(peers.sender, { type: "peer", value: "receiver-ready" });
   if (ws.role === "sender" && peers.receiver) send(ws, { type: "peer", value: "receiver-ready" });
@@ -87,6 +125,12 @@ wss.on("connection", ws => {
     try {
       const message = JSON.parse(raw.toString());
       message.from = ws.role;
+      if (ws.role === "voice" && message.type === "voice-audio") {
+        connectOpenAI();
+        if (openai?.readyState === WebSocket.OPEN)
+          openai.send(JSON.stringify({ type: "input_audio_buffer.append", audio: message.value }));
+        return;
+      }
       const other = ws.role === "sender" ? peers.receiver : peers.sender;
       send(other, message);
     } catch {

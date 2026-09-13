@@ -22,6 +22,8 @@ class MainActivity : Activity() {
   private lateinit var factory: PeerConnectionFactory
   private var peer: PeerConnection? = null
   private lateinit var audioPlayer: PcmPlayer
+  private lateinit var realtimePlayer: PcmPlayer
+  private lateinit var transcript: TextView
   private var socket: WebSocket? = null
   private var serverUrl = "ws://192.168.0.10:8080/ws"
   private val pendingIce = mutableListOf<IceCandidate>()
@@ -35,7 +37,7 @@ class MainActivity : Activity() {
     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
     serverUrl = intent.getStringExtra("server_url") ?: getPreferences(MODE_PRIVATE).getString("server_url", serverUrl)!!
-    initWebRtc(); audioPlayer = PcmPlayer(); buildUi(); connect()
+    initWebRtc(); audioPlayer = PcmPlayer(); realtimePlayer = PcmPlayer(24000); buildUi(); connect()
   }
 
   private fun initWebRtc() {
@@ -57,6 +59,7 @@ class MainActivity : Activity() {
     }
     rig = ChihiroRig(this)
     status = TextView(this).apply { text = "接続中…"; textSize = 18f; setTextColor(Color.WHITE); setPadding(24,12,24,12); setBackgroundColor(0x99000000.toInt()) }
+    transcript = TextView(this).apply { textSize=26f; setTextColor(Color.WHITE); setPadding(32,18,32,18); setBackgroundColor(0x99000000.toInt()) }
     val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
     // The whole portrait phone frame is aspect-fitted to the TV. The surface
     // stays in the base layer so the character/cursor can be drawn above it.
@@ -78,6 +81,7 @@ class MainActivity : Activity() {
     }
     root.addView(cursor, FrameLayout.LayoutParams(80,56))
     root.addView(status, FrameLayout.LayoutParams(-2,-2,Gravity.START or Gravity.TOP).apply { leftMargin=24; topMargin=18 })
+    root.addView(transcript,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM).apply { leftMargin=80; rightMargin=80; bottomMargin=28 })
     setContentView(root)
   }
 
@@ -126,6 +130,9 @@ class MainActivity : Activity() {
       "ice" -> { val c=message.getJSONObject("candidate"); val candidate=IceCandidate(c.optString("sdpMid"),c.getInt("sdpMLineIndex"),c.getString("candidate")); if(peer?.remoteDescription==null) pendingIce+=candidate else peer?.addIceCandidate(candidate) }
       "audio-level" -> rig.setAudioLevel(message.optDouble("value",0.0).toFloat())
       "audio-pcm" -> { rig.setAudioLevel(message.optDouble("level",0.0).toFloat()); audioPlayer.offer(message.getString("value")) }
+      "realtime-audio" -> { rig.setAudioLevel(.75f); realtimePlayer.offer(message.getString("value")); rig.postDelayed({rig.setAudioLevel(0f)},180) }
+      "realtime-transcript" -> runOnUiThread { transcript.append(message.optString("value")) }
+      "realtime-error" -> showStatus(message.optString("value"))
       "audio-status" -> showStatus(message.optString("value"))
       "focus" -> showCursor(message)
       "focus-click" -> runOnUiThread { cursor.animate().scaleX(.82f).scaleY(.82f).setDuration(70).withEndAction { cursor.animate().scaleX(1f).scaleY(1f).setDuration(100) } }
@@ -174,6 +181,6 @@ class MainActivity : Activity() {
   private fun send(j:JSONObject){ socket?.send(j.toString()) }
   private fun showStatus(value:String)=runOnUiThread { status.text=value; status.visibility=View.VISIBLE; status.postDelayed({ if(status.text==value) status.visibility=View.GONE },3000) }
 
-  override fun onDestroy() { socket?.close(1000,"activity destroyed"); peer?.close(); audioPlayer.release(); renderer.release(); factory.dispose(); egl.release(); client.dispatcher.executorService.shutdown(); super.onDestroy() }
+  override fun onDestroy() { socket?.close(1000,"activity destroyed"); peer?.close(); audioPlayer.release(); realtimePlayer.release(); renderer.release(); factory.dispose(); egl.release(); client.dispatcher.executorService.shutdown(); super.onDestroy() }
   private open class Sdp:SdpObserver { override fun onCreateSuccess(s:SessionDescription)=Unit; override fun onSetSuccess()=Unit; override fun onCreateFailure(e:String)=Unit; override fun onSetFailure(e:String)=Unit }
 }

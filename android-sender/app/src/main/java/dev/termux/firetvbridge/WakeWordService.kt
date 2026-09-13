@@ -63,6 +63,7 @@ class WakeWordService : Service(), RecognitionListener {
       triggered = true
       recognizer?.cancel()
       notifyText("呼びかけを検出。Fire TVを起動中…")
+      startForegroundService(Intent(this,VoiceBridgeService::class.java).setAction(VoiceBridgeService.START))
       val request = Request.Builder().url("http://127.0.0.1:8080/wake")
         .post(ByteArray(0).toRequestBody(null)).build()
       client.newCall(request).enqueue(object : Callback {
