@@ -64,6 +64,18 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 const peers = { sender: null, receiver: null, voice: null };
 let openai = null;
+let voiceGateTimer = null;
+
+function gatePhoneMic(muted) {
+  send(peers.voice, { type: "voice-gate", muted });
+  if (voiceGateTimer) clearTimeout(voiceGateTimer);
+  voiceGateTimer = null;
+}
+
+function releasePhoneMicAfterPlayback() {
+  if (voiceGateTimer) clearTimeout(voiceGateTimer);
+  voiceGateTimer = setTimeout(() => gatePhoneMic(false), 1200);
+}
 
 function send(ws, data) {
   if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
@@ -87,9 +99,14 @@ function connectOpenAI() {
   })));
   openai.on("message", raw => {
     const event = JSON.parse(raw.toString());
-    if (["response.output_audio.delta", "response.audio.delta"].includes(event.type))
+    if (["response.output_audio.delta", "response.audio.delta"].includes(event.type)) {
+      gatePhoneMic(true);
       send(peers.receiver, { type: "realtime-audio", sampleRate: 24000, value: event.delta });
-    else if (["response.output_audio_transcript.delta", "response.audio_transcript.delta"].includes(event.type))
+      send(peers.voice, { type: "echo-reference", sampleRate: 24000, value: event.delta });
+      releasePhoneMicAfterPlayback();
+    } else if (["response.output_audio.done", "response.audio.done"].includes(event.type)) {
+      releasePhoneMicAfterPlayback();
+    } else if (["response.output_audio_transcript.delta", "response.audio_transcript.delta"].includes(event.type))
       send(peers.receiver, { type: "realtime-transcript", value: event.delta });
     else if (event.type === "error") send(peers.receiver, { type: "realtime-error", value: event.error?.message || "Realtime error" });
   });
