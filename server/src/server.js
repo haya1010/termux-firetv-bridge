@@ -13,7 +13,9 @@ const publicDir = path.resolve(here, "../public");
 const port = Number(process.env.PORT || 8080);
 const token = process.env.BRIDGE_TOKEN || "";
 const fireTvSerial = process.env.FIRETV_SERIAL || "192.168.0.42:5555";
-const adb = process.env.ADB_PATH || "adb";
+const fireTvComponent = process.env.FIRETV_COMPONENT || "jp.kusakabesatsu.chihiro/.MainActivity";
+const termuxAdb = "/data/data/com.termux/files/usr/bin/adb";
+const adb = process.env.ADB_PATH || (fs.existsSync(termuxAdb) ? termuxAdb : "adb");
 const run = promisify(execFile);
 const apiKey = process.env.OPENAI_API_KEY || (() => {
   try { return fs.readFileSync(path.join(os.homedir(), ".config/openai/key"), "utf8").trim(); }
@@ -41,7 +43,7 @@ async function wakeFireTv() {
   await delay(1_200);
   await run(adb, [
     "-s", fireTvSerial, "shell", "am", "start", "-n",
-    "dev.termux.firetvreceiver/.MainActivity", "--es", "server_url",
+    fireTvComponent, "--es", "server_url",
     "ws://192.168.0.10:8080/ws"
   ], { timeout: 10_000 });
   return { ok: true, device: fireTvSerial };
